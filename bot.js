@@ -3,28 +3,23 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
-const GROUP_ID  = Number(process.env.GROUP_ID);
-const TMDB_KEY  = process.env.TMDB_API_KEY;
-const KIMI_KEY  = process.env.KIMI_API_KEY;
-const USERNAME  = process.env.BOT_USERNAME;   // SkeltorVideotecaBot
+const GROUP_ID = Number(process.env.GROUP_ID);
+const TMDB_KEY = process.env.TMDB_API_KEY;
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
+const USERNAME = process.env.BOT_USERNAME;
 
 axios.defaults.baseURL = 'https://api.themoviedb.org/3';
 
-/* ---------- LLAMADA A KIMI ---------- */
-async function askKimi(prompt) {
+/* ---------- LLAMADA A GEMINI ---------- */
+async function askGemini(prompt) {
   try {
     const { data } = await axios.post(
-      'https://api.moonshot.cn/v1/chat/completions',
-      {
-        model: 'moonshot-v1-8k',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7
-      },
-      { headers: { Authorization: `Bearer ${KIMI_KEY}` } }
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_KEY}`,
+      { contents: [{ parts: [{ text: prompt }] }] }
     );
-    return data.choices?.[0]?.message?.content?.trim() || '¡Ni la mismísima Skeletor tiene palabras!';
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '¡Ni siquiera Gemini entiende tu gusto!';
   } catch {
-    return 'Los dioses del streaming han fallado. Inténtalo más tarde, insignificante mortal.';
+    return 'Los servidores de Google se han rendido ante Skeletor… inténtalo luego.';
   }
 }
 
@@ -41,7 +36,7 @@ async function searchTMDb(query, type = 'movie') {
 function buildPrompt(item) {
   const year = (item.release_date || item.first_air_date || '').slice(0, 4);
   const genres = item.genre_ids?.map(id => genreMap[id]).filter(Boolean).join(' | ') || '';
-  return `Eres Skeletor, crítico de cine arrogante y teatral. Resume y comenta con tono mordaz la siguiente obra sin inventar nada:\n\nTítulo: ${item.title || item.name}\nAño: ${year}\nGéneros: ${genres}\nSinopsis oficial: ${item.overview}`;
+  return `Actúa como Skeletor, crítico de cine sarcástico y teatral. Resume y opina sin inventar nada:\n\nTítulo: ${item.title || item.name}\nAño: ${year}\nGéneros: ${genres}\nSinopsis oficial: ${item.overview}`;
 }
 
 /* ---------- MAPA DE GÉNEROS ---------- */
@@ -56,24 +51,24 @@ const genreMap = {
 bot.on('message', async (msg) => {
   if (msg.chat.id !== GROUP_ID || !msg.text) return;
 
-  // ¿Nos mencionaron?
   const mentionRegex = new RegExp(`@${USERNAME}`, 'i');
   if (!mentionRegex.test(msg.text)) return;
 
-  // Extraer título: todo lo que venga después de la mención
   const query = msg.text.replace(`@${USERNAME}`, '').trim();
-  if (!query) return bot.sendMessage(GROUP_ID, '¿Hablas en lenguaje de cobayas? ¡Especifica la obra, mortal!');
+  if (!query) {
+    return bot.sendMessage(GROUP_ID, '¿Hablas en lengua de cobayas? ¡Especifica la obra, mortal!');
+  }
 
   const item = await searchTMDb(query) || await searchTMDb(query, 'tv');
   if (!item) {
-    return bot.sendMessage(GROUP_ID, '¡Ni rastro de esa bazofia en el multiverso del cine! Vuelve cuando tengas buenos gustos.');
+    return bot.sendMessage(GROUP_ID, '¡Ni rastro de esa bazofia en el multiverso del cine!');
   }
 
   const prompt = buildPrompt(item);
-  const skeletorText = await askKimi(prompt);
+  const skeletorText = await askGemini(prompt);
 
   const poster = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
   bot.sendPhoto(GROUP_ID, poster, { caption: skeletorText, parse_mode: 'Markdown' });
 });
 
-console.log('🎭 Skeletor vigila el grupo…');
+console.log('🎭 Skeletor con Gemini está en el grupo.');

@@ -105,16 +105,16 @@ bot.on('message', async (msg) => {
   const prompt = buildPrompt(item);
   const skeletorText = await askGemini(prompt);
 
-    const poster = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
-  const skeletorText = await askGemini(prompt);
+  const poster = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
 
-  /* 1) Imagen sola */
+  // 1) Imagen sin texto
   await bot.sendPhoto(GROUP_ID, poster);
 
-  /* 2) Texto como respuesta al mensaje original */
+  // 2) Texto como respuesta al mensaje original (sin límite de 1024)
   await bot.sendMessage(GROUP_ID, skeletorText, {
     parse_mode: 'Markdown',
     reply_to_message_id: msg.message_id
   });
+});
 
 console.log('🎭 Skeletor con Gemini listo.');

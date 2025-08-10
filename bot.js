@@ -5,59 +5,58 @@ const axios = require('axios');
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const GROUP_ID = parseInt(process.env.GROUP_ID);
 const TMDB_KEY = process.env.TMDB_API_KEY;
+axios.defaults.baseURL = 'https://api.themoviedb.org/3';
 
-/* ---------- Funciones de Skeletor ---------- */
-const skeletorPhrases = {
-  greet: "¡Ja, ja, ja! ¿Otra vez buscando películas, insignificante mortal?",
-  recommend: "Por tus pobres gustos, te sugiero:",
-  notFound: "¡Nada encontrado! ¡Ni el mismísimo Skeletor puede ayudarte con eso!",
+/* --- funciones aux --- */
+async function getMovie(query) {
+  const { data } = await axios.get(`/search/movie`, {
+    params: { api_key: TMDB_KEY, query, language: 'es' }
+  });
+  return data.results[0] || null;
+}
+
+async function getShow(query) {
+  const { data } = await axios.get(`/search/tv`, {
+    params: { api_key: TMDB_KEY, query, language: 'es' }
+  });
+  return data.results[0] || null;
+}
+
+function buildCaption(item) {
+  const year = (item.release_date || item.first_air_date || '').slice(0, 4);
+  const genres = (item.genre_ids || [])
+    .map(id => genreMap[id])
+    .filter(Boolean)
+    .join(' | ');
+  return `${item.overview}\n\nGéneros: ${genres}\nAño: ${year}`;
+}
+
+/* --- mapa de géneros (solo los más comunes) --- */
+const genreMap = {
+  28: 'Acción', 12: 'Aventura', 16: 'Animación', 35: 'Comedia', 80: 'Crimen',
+  99: 'Documental', 18: 'Drama', 10751: 'Familia', 14: 'Fantasía',
+  36: 'Historia', 27: 'Terror', 10402: 'Música', 9648: 'Misterio',
+  10749: 'Romance', 878: 'Ciencia ficción', 10770: 'Película de TV',
+  53: 'Suspenso', 10752: 'Bélica', 37: 'Western'
 };
 
-/* ---------- Detectar frases clave ---------- */
-function detectIntent(text) {
-  const lower = text.toLowerCase();
-  if (/¿alguien ha visto|recomienda|busco|quiero ver/i.test(lower)) return 'recommend';
-  if (/estreno|cuándo se estrena|cuando sale/i.test(lower)) return 'release';
-  if (/director|actriz|actor|protagonista/i.test(lower)) return 'cast';
-  if (/donde ver|plataforma|netflix|prime|disney/i.test(lower)) return 'where';
-  return null;
-}
-
-/* ---------- Llamadas a TMDb ---------- */
-async function searchMovie(query) {
-  const url = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodeURIComponent(query)}`;
-  const res = await axios.get(url);
-  return res.data.results[0] || null;
-}
-
-/* ---------- Respuestas ---------- */
+/* --- escucha mensajes --- */
 bot.on('message', async (msg) => {
-  if (msg.chat.id !== GROUP_ID) return; // Solo grupo permitido
-  if (!msg.text) return;
+  if (msg.chat.id !== GROUP_ID || !msg.text) return;
 
-  const intent = detectIntent(msg.text);
-  if (!intent) return;
+  const text = msg.text.toLowerCase();
+  const match = msg.text.match(/"(.+?)"/); // busca título entre comillas
+  if (!match) return;
 
-  switch (intent) {
-    case 'recommend': {
-      const match = msg.text.match(/(?:película|pelicula|serie|algo de)\s+(.+)/i);
-      const query = match ? match[1] : 'popular';
-      const movie = await searchMovie(query);
-      if (!movie) {
-        return bot.sendMessage(GROUP_ID, skeletorPhrases.notFound);
-      }
-      bot.sendMessage(GROUP_ID,
-        `${skeletorPhrases.recommend} *${movie.title}* (${movie.release_date?.slice(0, 4)})\n${movie.overview?.slice(0, 200)}...`,
-        { parse_mode: 'Markdown' }
-      );
-      break;
-    }
-    case 'release': {
-      bot.sendMessage(GROUP_ID, "¡Por el poder de Grayskull! Aún no implementé estrenos, pero llegará...");
-      break;
-    }
-    default: break;
-  }
+  const query = match[1];
+  let item = await getMovie(query);
+  if (!item) item = await getShow(query);
+  if (!item) return;
+
+  const poster = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
+  const caption = buildCaption(item);
+
+  bot.sendPhoto(msg.chat.id, poster, { caption, parse_mode: 'Markdown' });
 });
 
-console.log('🎬 Skeletor está vigilando el grupo...');
+console.log('🎬 Bot listo y silencioso');

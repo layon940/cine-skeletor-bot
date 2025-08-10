@@ -80,12 +80,36 @@ bot.on('message', async (msg) => {
   const mentionRegex = new RegExp(`@${USERNAME}`, 'i');
   if (!mentionRegex.test(msg.text)) return;
 
-  const query = msg.text.replace(`@${USERNAME}`, '').trim();
-  if (!query) {
-    return bot.sendMessage(GROUP_ID, '¿Hablas en lengua de cobayas? ¡Especifica la obra, mortal!');
+  let query = msg.text.replace(`@${USERNAME}`, '').trim();
+  if (!query) return bot.sendMessage(GROUP_ID, '¿Hablas en lengua de cobayas? ¡Especifica la obra, mortal!');
+
+  /* ---------- CASO 1: recomendación sin título ---------- */
+  if (/recomienda|recomiendame/i.test(query)) {
+    try {
+      const { data } = await axios.get('/trending/movie/week', {
+        params: { api_key: TMDB_KEY, language: 'es' }
+      });
+      const terror = data.results
+        .filter(m => m.genre_ids?.includes(27)) // 27 = Terror
+        .slice(0, 3);
+      if (terror.length) {
+        const titles = terror.map(t => t.title).join(', ');
+        return bot.sendMessage(
+          GROUP_ID,
+          `¡Escucha, gusano! Los mortales temen aún: *${titles}*. ¡Escoge o perece!`,
+          { parse_mode: 'Markdown' }
+        );
+      } else {
+        return bot.sendMessage(GROUP_ID, '¡Ni el mismísimo Skeletor encuentra terror hoy! Prueba otro género…');
+      }
+    } catch {
+      return bot.sendMessage(GROUP_ID, 'Los dioses del streaming han fallado. Inténtalo luego.');
+    }
   }
 
-  const item = await searchTMDb(query) || await searchTMDb(query, 'tv');
+  /* ---------- CASO 2: búsqueda concreta ---------- */
+  let q = query.replace(/\b(19|20)\d{2}\b/g, '').replace(/[^\w\s]/gi, ' ').trim();
+  const item = await searchTMDb(q) || await searchTMDb(q, 'tv');
   if (!item) {
     return bot.sendMessage(GROUP_ID, '¡Ni rastro de esa bazofia en el multiverso del cine!');
   }
@@ -96,5 +120,3 @@ bot.on('message', async (msg) => {
   const poster = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
   bot.sendPhoto(GROUP_ID, poster, { caption: skeletorText, parse_mode: 'Markdown' });
 });
-
-console.log('🎭 Skeletor con Gemini está en el grupo.');

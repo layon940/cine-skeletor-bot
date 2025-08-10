@@ -23,6 +23,23 @@ async function askGemini(prompt) {
   }
 }
 
+/* ---------- 🎁 Extra – respuesta cuando piden recomendación sin título ---------- */
+
+if (/recomienda|recomiendame/i.test(query) && !q) {
+  const popular = await axios.get('/trending/movie/week', {
+    params: { api_key: TMDB_KEY, language: 'es' }
+  });
+  const terror = popular.data.results
+    .filter(m => m.genre_ids?.includes(27)) // 27 = Terror
+    .slice(0, 3);
+  if (terror.length) {
+    const titles = terror.map(t => t.title).join(', ');
+    return bot.sendMessage(
+      GROUP_ID,
+      `¡Escucha, gusano! Los mortales temen aún: ${titles}. ¡Escoge o perece!`
+    );
+  }
+}
 /* ---------- BUSCAR EN TMDb (limpia y flexible) ---------- */
 async function searchTMDb(rawQuery, type = 'movie') {
   // quita año entre paréntesis o después de espacio

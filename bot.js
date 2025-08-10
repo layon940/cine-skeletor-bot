@@ -23,20 +23,29 @@ async function askGemini(prompt) {
   }
 }
 
-/* ---------- BUSCAR EN TMDb ---------- */
-async function searchTMDb(query, type = 'movie') {
+/* ---------- BUSCAR EN TMDb (limpia y flexible) ---------- */
+async function searchTMDb(rawQuery, type = 'movie') {
+  // quita año entre paréntesis o después de espacio
+  let q = rawQuery.replace(/\b(19|20)\d{2}\b/g, '').trim();
+  // quita signos de puntuación extra
+  q = q.replace(/[^\w\s]/gi, ' ').replace(/\s+/g, ' ').trim();
+  if (!q) return null;
+
   const endpoint = type === 'movie' ? '/search/movie' : '/search/tv';
   const { data } = await axios.get(endpoint, {
-    params: { api_key: TMDB_KEY, query, language: 'es' }
+    params: { api_key: TMDB_KEY, query: q, language: 'es' }
   });
   return data.results?.[0] || null;
 }
 
 /* ---------- CONSTRUIR PROMPT ---------- */
 function buildPrompt(item) {
+  if (!item) {
+    return 'Actúa como Skeletor y responde con sarcasmo: no encontré ninguna película/serie con ese nombre en TMDb. Invita al usuario a escribir mejor o probar otra.';
+  }
   const year = (item.release_date || item.first_air_date || '').slice(0, 4);
   const genres = item.genre_ids?.map(id => genreMap[id]).filter(Boolean).join(' | ') || '';
-  return `Actúa como Skeletor, crítico de cine sarcástico y teatral. Resume y opina sin inventar nada:\n\nTítulo: ${item.title || item.name}\nAño: ${year}\nGéneros: ${genres}\nSinopsis oficial: ${item.overview}`;
+  return `Actúa como Skeletor, crítico de cine sarcástico y teatral, sin inventar nada:\n\nTítulo: ${item.title || item.name}\nAño: ${year}\nGéneros: ${genres}\nSinopsis oficial: ${item.overview}`;
 }
 
 /* ---------- MAPA DE GÉNEROS ---------- */

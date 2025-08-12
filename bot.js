@@ -4,20 +4,16 @@ const axios = require('axios');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const OWNER_ID = Number(process.env.OWNER_ID);
-const GROUP_ID = Number(process.env.GROUP_ID);
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
-const USERNAME = process.env.BOT_USERNAME;
 
 axios.defaults.baseURL = 'https://api.themoviedb.org/3';
 
 /* ---------- UTILS ---------- */
 async function typing(chatId) {
-  // muestra “typing…” durante 2 s
   await bot.sendChatAction(chatId, 'typing');
-  return new Promise(res => setTimeout(res, 2000));
+  await new Promise(r => setTimeout(r, 1500));
 }
 
-/* ---------- GEMINI ---------- */
 async function askGemini(prompt) {
   try {
     const { data } = await axios.post(
@@ -30,7 +26,6 @@ async function askGemini(prompt) {
   }
 }
 
-/* ---------- BUSCAR EN TMDb ---------- */
 async function searchTMDb(rawQuery, type = 'movie') {
   const q = rawQuery
     .replace(/\b(19|20)\d{2}\b/g, '')
@@ -46,7 +41,6 @@ async function searchTMDb(rawQuery, type = 'movie') {
   return data.results?.[0] || null;
 }
 
-/* ---------- MAPA DE GÉNEROS ---------- */
 const genreMap = {
   28:'Acción',12:'Aventura',16:'Animación',35:'Comedia',80:'Crimen',
   99:'Documental',18:'Drama',10751:'Familia',14:'Fantasía',36:'Historia',
@@ -54,30 +48,20 @@ const genreMap = {
   878:'Ciencia ficción',53:'Suspenso',10752:'Bélica',37:'Western'
 };
 
-/* ---------- ESCUCHAR MENSAJES ---------- */
+/* ---------- ESCUCHAR ---------- */
 bot.on('message', async (msg) => {
   if (msg.from.id !== OWNER_ID) return;
 
-  const isPrivate = msg.chat.type === 'private';
-  const isMention = msg.text && new RegExp(`@${USERNAME}`, 'i').test(msg.text);
+  let query = msg.text?.trim() || '';
+  if (query === '/ping') return bot.sendMessage(msg.chat.id, 'Pong!');
 
-  if (!isPrivate && !isMention) return;
-
-  let query = isPrivate ? msg.text : msg.text.replace(`@${USERNAME}`, '').trim();
-
-  /* ---- COMANDO /ping ---- */
-  if (query === '/ping') {
-    return bot.sendMessage(msg.chat.id, 'Pong!');
-  }
-
-  if (!query || query === '/skeltor') return;
-
-  /* ---- COMANDO /skeltor + texto ---- */
+  /* ---- COMANDO /skeltor ---- */
   let useSkeltor = false;
   if (query.startsWith('/skeltor')) {
     useSkeltor = true;
     query = query.replace(/^\/skeltor\s*/i, '').trim();
   }
+  if (!query) return bot.sendMessage(msg.chat.id, '¿Qué necesitas saber?');
 
   /* ---- RECOMENDACIÓN ---- */
   if (/recomienda|recomiendame/i.test(query)) {
@@ -93,32 +77,35 @@ bot.on('message', async (msg) => {
         list = data.results.slice(0, 5);
       }
       const titles = list.map(t => t.title || t.name).join(', ');
-      return bot.sendMessage(msg.chat.id, titles || 'No hay tendencias ahora.');
+      return bot.sendMessage(msg.chat.id, titles || 'No hay tendencias.');
     } catch {
       return bot.sendMessage(msg.chat.id, 'No pude obtener recomendaciones.');
     }
   }
 
   /* ---- BÚSQUEDA CONCRETA ---- */
-  const item = await searchTMDb(query) || await searchTMDb(query, 'tv');
+  await typing(msg.chat.id);
+  let item = await searchTMDb(query) || await searchTMDb(query, 'tv');
   if (!item) {
-    return bot.sendMessage(msg.chat.id, 'No tengo información sobre eso.');
+    const fallbackPrompt = useSkeltor
+      ? 'Actúa como Skeletor brevemente: no encontré esa obra en TMDb.'
+      : 'No encontré información sobre esa obra.';
+    const text = await askGemini(fallbackPrompt);
+    return bot.sendMessage(msg.chat.id, text);
   }
 
   const year = (item.release_date || item.first_air_date || '').slice(0, 4);
   const genres = item.genre_ids?.map(id => genreMap[id]).filter(Boolean).join(' | ') || '';
 
-  let prompt = useSkeltor
-    ? `Actúa como Skeletor, breve y sin narración interna. Sin inventar:\n\nTítulo: ${item.title || item.name}\nAño: ${year}\nGéneros: ${genres}\nSinopsis: ${item.overview}`
+  const prompt = useSkeltor
+    ? `Actúa como Skeletor, breve y sin narración interna (≤1500 chars). Sin inventar:\n\nTítulo: ${item.title || item.name}\nAño: ${year}\nGéneros: ${genres}\nSinopsis: ${item.overview}`
     : `Responde con información veraz y concisa:\n\nTítulo: ${item.title || item.name}\nAño: ${year}\nGéneros: ${genres}\nSinopsis: ${item.overview}`;
 
-  await typing(msg.chat.id);
-  const text = await askGemini(prompt);
-  const shortText = text.slice(0, 1500);
-
+  const text = (await askGemini(prompt)).slice(0, 1500);
   const poster = `https://image.tmdb.org/t/p/w500${item.poster_path}`;
+
   await bot.sendPhoto(msg.chat.id, poster);
-  await bot.sendMessage(msg.chat.id, shortText, { parse_mode: 'Markdown' });
+  await bot.sendMessage(msg.chat.id, text, { parse_mode: 'Markdown' });
 });
 
 console.log('🤖 Bot personal activo.');

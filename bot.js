@@ -11,7 +11,7 @@ axios.defaults.baseURL = 'https://api.themoviedb.org/3';
 
 /* ---------- UTILS ---------- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const escapeMD = str => str.replace(/([_*[\]()~`>#+\-=|{}.!])/g, '\\$1');
+const escapeMD = str => str.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 
 /* ---------- GEMINI ---------- */
 async function askGemini(prompt) {
@@ -31,26 +31,42 @@ function normalize(str) {
   return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
-async function searchTMDb(query) {
+async function searchTMDb(query, page = 1) {
   const q = normalize(query).replace(/[^\w\s]/g, ' ').trim();
   if (!q) return [];
   const [m, t] = await Promise.all([
-    axios.get('/search/movie', { params: { api_key: TMDB_KEY, query: q, language: 'es' } }),
-    axios.get('/search/tv',    { params: { api_key: TMDB_KEY, query: q, language: 'es' } })
+    axios.get('/search/movie', { params: { api_key: TMDB_KEY, query: q, page, language: 'es' } }),
+    axios.get('/search/tv',    { params: { api_key: TMDB_KEY, query: q, page, language: 'es' } })
   ]);
   return [...m.data.results, ...t.data.results].slice(0, 10);
 }
 
-/* ---------- FORMATO FICHA ---------- */
-const genreMap = { 28:'#Acción',12:'#Aventura',16:'#Animación',35:'#Comedia',80:'#Crimen',99:'#Documental',18:'#Drama',10751:'#Familia',14:'#Fantasía',36:'#Historia',27:'#Horror',10402:'#Musical',9648:'#Misterio',10749:'#Romance',878:'#Ciencia_ficción',53:'#Suspenso',10752:'#Guerra',37:'#Oeste' };
-const flag = iso => ({ US:'🇺🇸', GB:'🇬🇧', ES:'🇪🇸', FR:'🇫🇷', DE:'🇩🇪', IT:'🇮🇹', JP:'🇯🇵', KR:'🇰🇷', MX:'🇲🇽', BR:'🇧🇷', CA:'🇨🇦', AU:'🇦🇺', RU:'🇷🇺', IN:'🇮🇳', CN:'🇨🇳' }[iso] || '🏳️');
+/* ---------- MAPAS ---------- */
+const genreMap = {
+  28:'#Acción',12:'#Aventura',16:'#Animación',35:'#Comedia',80:'#Crimen',
+  99:'#Documental',18:'#Drama',10751:'#Familia',14:'#Fantasía',36:'#Historia',
+  27:'#Horror',10402:'#Musical',9648:'#Misterio',10749:'#Romance',
+  878:'#Ciencia_ficción',53:'#Suspenso',10752:'#Guerra',37:'#Oeste'
+};
+const countryNames = {
+  US: 'United_States', GB: 'United_Kingdom', ES: 'Spain', FR: 'France', DE: 'Germany', IT: 'Italy',
+  JP: 'Japan', KR: 'South_Korea', MX: 'Mexico', BR: 'Brazil', CA: 'Canada', AU: 'Australia',
+  RU: 'Russia', IN: 'India', CN: 'China', AR: 'Argentina', NL: 'Netherlands', SE: 'Sweden',
+  DK: 'Denmark', NO: 'Norway', FI: 'Finland', PT: 'Portugal', CH: 'Switzerland'
+};
+const flag = iso => ({
+  US:'🇺🇸',GB:'🇬🇧',ES:'🇪🇸',FR:'🇫🇷',DE:'🇩🇪',IT:'🇮🇹',JP:'🇯🇵',KR:'🇰🇷',MX:'🇲🇽',BR:'🇧🇷',CA:'🇨🇦',
+  AU:'🇦🇺',RU:'🇷🇺',IN:'🇮🇳',CN:'🇨🇳',AR:'🇦🇷',NL:'🇳🇱',SE:'🇸🇪',DK:'🇩🇰',NO:'🇳🇴',FI:'🇫🇮',PT:'🇵🇹',CH:'🇨🇭'
+}[iso] || '🏳️');
 
 function buildFicha(item, type) {
-  const title = item.title || item.name;
+  const titleOrig = item.original_title || item.original_name || item.title || item.name;
+  const titleES   = item.title || item.name;
   const year = type === 'movie'
     ? (item.release_date || '').slice(0, 4)
     : `${(item.first_air_date || '').slice(0, 4)} - ${(item.last_air_date || '').slice(0, 4) || ''}`;
   const country = item.origin_country?.[0] || item.production_countries?.[0]?.iso_3166_1 || 'US';
+  const countryName = countryNames[country] || country;
   const duration = type === 'movie'
     ? `${item.runtime || 0}m`
     : `${item.episode_run_time?.[0] || 0}m`;
@@ -61,9 +77,10 @@ function buildFicha(item, type) {
   const genres = item.genres?.map(g => genreMap[g.id] || `#${g.name.replace(/ /g, '_')}`).join(' ') || '';
   const sinopsis = item.overview?.slice(0, 750) || 'Sin sinopsis.';
 
-  return `🏷Título: *${escapeMD(title)}* | *${escapeMD(title)}*\n📅Año: *${escapeMD(year)}*\n🗺País: ${flag(country)}#${country}\n` +
-         (type === 'movie' ? `⏰Duración: *${duration}*\n` : `⏰Duración: *${duration}*\n⏳Temporadas: *${seasons}*\n🎞Episodios: *${episodes}*\n`) +
-         `©Clasificación: *${escapeMD(rating)}*\n📝Género: ${genres}\n\n📃Sinopsis: ${escapeMD(sinopsis)}`;
+  return `🏷Título: *${escapeMD(titleOrig)}* | *${escapeMD(titleES)}*\n📅Año: *${escapeMD(year)}*\n` +
+         `🗺País: ${flag(country)}#${countryName}\n⏰Duración: *${duration}*\n` +
+         (type === 'tv' ? `⏳Temporadas: *${seasons}*\n🎞Episodios: *${episodes}*\n` : '') +
+         `©Clasificación: *${escapeMD(rating)}*\n📝Género: ${genres}\n📃Sinopsis: ${escapeMD(sinopsis)}`;
 }
 
 /* ---------- ROUTER ---------- */
@@ -84,15 +101,16 @@ bot.on('message', async msg => {
     const results = await searchTMDb(term);
     if (!results.length) return bot.sendMessage(chatId, 'Sin resultados.');
 
-    const buttons = results.map((item, idx) => ({
-      text: `${idx + 1}. ${item.title || item.name}`,
-      callback_data: `detail_${item.id}_${item.media_type || (item.first_air_date ? 'tv' : 'movie')}`
-    }));
+    let list = 'Resultados:\n';
+    const buttons = results.map((item, idx) => {
+      list += `${idx + 1}. ${item.title || item.name}\n`;
+      return { text: `${idx + 1}`, callback_data: `detail_${item.id}_${item.media_type || (item.first_air_date ? 'tv' : 'movie')}` };
+    });
 
     const keyboard = [];
     for (let i = 0; i < buttons.length; i += 5) keyboard.push(buttons.slice(i, i + 5));
 
-    return bot.sendMessage(chatId, 'Resultados:', { reply_markup: { inline_keyboard: keyboard } });
+    return bot.sendMessage(chatId, list, { reply_markup: { inline_keyboard: keyboard } });
   }
 
   /* /skeltor <texto> */
@@ -120,7 +138,7 @@ bot.on('callback_query', async query => {
   await bot.sendChatAction(query.message.chat.id, 'typing');
 
   const { data } = await axios.get(`/${type}/${id}`, {
-    params: { api_key: process.env.TMDB_API_KEY, language: 'es', append_to_response: 'release_dates,content_ratings' }
+    params: { api_key: TMDB_KEY, language: 'es', append_to_response: 'release_dates,content_ratings' }
   });
 
   const ficha = buildFicha(data, type);
@@ -130,4 +148,4 @@ bot.on('callback_query', async query => {
   await bot.sendMessage(query.message.chat.id, ficha, { parse_mode: 'Markdown' });
 });
 
-console.log('🤖 Bot listo');
+console.log('🤖 Bot pulido y listo');

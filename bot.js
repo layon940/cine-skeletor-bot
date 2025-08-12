@@ -20,9 +20,9 @@ async function askGemini(prompt) {
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_KEY}`,
       { contents: [{ parts: [{ text: prompt }] }] }
     );
-    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '—';
   } catch {
-    return 'Sin respuesta.';
+    return '—';
   }
 }
 
@@ -43,10 +43,9 @@ async function searchTMDb(query) {
 
 /* ---------- MAPAS ---------- */
 const genreMap = {
-  28:'#Acción',12:'#Aventura',16:'#Animación',35:'#Comedia',80:'#Crimen',
-  99:'#Documental',18:'#Drama',10751:'#Familia',14:'#Fantasía',36:'#Historia',
-  27:'#Horror',10402:'#Musical',9648:'#Misterio',10749:'#Romance',
-  878:'#Ciencia_ficción',53:'#Suspenso',10752:'#Guerra',37:'#Oeste'
+  28:'#Acción',12:'#Aventura',16:'#Animación',35:'#Comedia',80:'#Crimen',99:'#Documental',18:'#Drama',
+  10751:'#Familia',14:'#Fantasía',36:'#Historia',27:'#Horror',10402:'#Musical',9648:'#Misterio',
+  10749:'#Romance',878:'#Ciencia_ficción',53:'#Suspenso',10752:'#Guerra',37:'#Oeste'
 };
 const countryNames = {
   US:'United_States',GB:'United_Kingdom',ES:'Spain',FR:'France',DE:'Germany',IT:'Italy',
@@ -59,22 +58,25 @@ const flag = iso => ({
   CA:'🇨🇦',AU:'🇦🇺',RU:'🇷🇺',IN:'🇮🇳',CN:'🇨🇳',AR:'🇦🇷',NL:'🇳🇱',SE:'🇸🇪',DK:'🇩🇰',NO:'🇳🇴',
   FI:'🇫🇮',PT:'🇵🇹',CH:'🇨🇭'}[iso] || '🏳️');
 
+/* ---------- FICHA CON DATOS O VACÍOS ---------- */
 function buildFicha(item, type) {
   const titleOrig = item.original_title || item.original_name || item.title || item.name;
   const titleES   = item.title || item.name;
   const year = type === 'movie'
     ? (item.release_date || '').slice(0, 4)
     : `${(item.first_air_date || '').slice(0, 4)} - ${(item.last_air_date || '').slice(0, 4) || ''}`;
-  const country = item.origin_country?.[0] || item.production_countries?.[0]?.iso_3166_1 || 'US';
+  const country = item.origin_country?.[0] || item.production_countries?.[0]?.iso_3166_1 || '—';
   const countryName = countryNames[country] || country;
-  const duration = type === 'movie' ? `${item.runtime || 0}m` : `${item.episode_run_time?.[0] || 0}m`;
-  const seasons = item.number_of_seasons || 1;
-  const episodes = item.number_of_episodes || 1;
+  const duration = type === 'movie'
+    ? `${item.runtime || '—'}m`
+    : `${item.episode_run_time?.[0] || '—'}m`;
+  const seasons = item.number_of_seasons || '—';
+  const episodes = item.number_of_episodes || '—';
   const rating = item.release_dates?.results?.find(r => r.iso_3166_1 === country)?.release_dates?.[0]?.certification ||
-                 item.content_ratings?.results?.[0]?.rating || 'Sin clasificación';
+                 item.content_ratings?.results?.[0]?.rating || '—';
   const genresArr = item.genres || [];
-  const genres = genresArr.map(g => `#${g.name.replace(/ /g, '_')}`).join(' ') || '';
-  const sinopsis = (item.overview || '').slice(0, 750).replace(/\s+/g, ' ').trim() || 'Sin sinopsis.';
+  const genres = genresArr.map(g => `#${g.name.replace(/ /g, '_')}`).join(' ') || '—';
+  const sinopsis = (item.overview || '').slice(0, 750).replace(/\s+/g, ' ').trim() || '—';
 
   return `🏷Título: *${escapeMD(titleOrig)}* | *${escapeMD(titleES)}*\n📅Año: *${escapeMD(year)}*\n` +
          `🗺País: ${flag(country)}#${countryName}\n⏰Duración: *${duration}*\n` +
@@ -100,7 +102,10 @@ bot.on('message', async msg => {
 
     let list = 'Resultados:\n';
     const buttons = results.map((item, idx) => {
-      list += `${idx + 1}. ${item.title || item.name}\n`;
+      const year = (item.release_date || item.first_air_date || '').slice(0, 4);
+      const typeEmoji = item.media_type === 'tv' || item.first_air_date ? '📺' : '🎬';
+      const typeText  = item.media_type === 'tv' || item.first_air_date ? 'Serie' : 'Película';
+      list += `${idx + 1}. ${typeEmoji} ${item.title || item.name} [${year}] - ${typeText}\n`;
       return {
         text: `${idx + 1}`,
         callback_data: `detail_${item.id}_${item.media_type || (item.first_air_date ? 'tv' : 'movie')}`
@@ -150,4 +155,4 @@ bot.on('callback_query', async query => {
   }
 });
 
-console.log('🤖 Bot 100 % listo');
+console.log('🤖 Bot final y pulido');

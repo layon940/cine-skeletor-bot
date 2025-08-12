@@ -10,7 +10,14 @@ const USERNAME = process.env.BOT_USERNAME;
 
 axios.defaults.baseURL = 'https://api.themoviedb.org/3';
 
-/* ---------- LLAMADA A GEMINI ---------- */
+/* ---------- UTILS ---------- */
+async function typing(chatId) {
+  // muestra “typing…” durante 2 s
+  await bot.sendChatAction(chatId, 'typing');
+  return new Promise(res => setTimeout(res, 2000));
+}
+
+/* ---------- GEMINI ---------- */
 async function askGemini(prompt) {
   try {
     const { data } = await axios.post(
@@ -49,7 +56,6 @@ const genreMap = {
 
 /* ---------- ESCUCHAR MENSAJES ---------- */
 bot.on('message', async (msg) => {
-  // Solo yo
   if (msg.from.id !== OWNER_ID) return;
 
   const isPrivate = msg.chat.type === 'private';
@@ -57,23 +63,25 @@ bot.on('message', async (msg) => {
 
   if (!isPrivate && !isMention) return;
 
-  let query = isPrivate
-    ? msg.text
-    : msg.text.replace(`@${USERNAME}`, '').trim();
+  let query = isPrivate ? msg.text : msg.text.replace(`@${USERNAME}`, '').trim();
 
-  if (!query) return;
+  /* ---- COMANDO /ping ---- */
+  if (query === '/ping') {
+    return bot.sendMessage(msg.chat.id, 'Pong!');
+  }
 
-  /* ---- COMANDO /skeltor ---- */
+  if (!query || query === '/skeltor') return;
+
+  /* ---- COMANDO /skeltor + texto ---- */
   let useSkeltor = false;
   if (query.startsWith('/skeltor')) {
     useSkeltor = true;
     query = query.replace(/^\/skeltor\s*/i, '').trim();
   }
 
-  if (!query) return bot.sendMessage(msg.chat.id, '¿Qué necesitas saber?');
-
   /* ---- RECOMENDACIÓN ---- */
   if (/recomienda|recomiendame/i.test(query)) {
+    await typing(msg.chat.id);
     try {
       const { data } = await axios.get('/trending/movie/week', {
         params: { api_key: process.env.TMDB_API_KEY, language: 'es' }
@@ -104,6 +112,7 @@ bot.on('message', async (msg) => {
     ? `Actúa como Skeletor, breve y sin narración interna. Sin inventar:\n\nTítulo: ${item.title || item.name}\nAño: ${year}\nGéneros: ${genres}\nSinopsis: ${item.overview}`
     : `Responde con información veraz y concisa:\n\nTítulo: ${item.title || item.name}\nAño: ${year}\nGéneros: ${genres}\nSinopsis: ${item.overview}`;
 
+  await typing(msg.chat.id);
   const text = await askGemini(prompt);
   const shortText = text.slice(0, 1500);
 

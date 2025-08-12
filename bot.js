@@ -59,6 +59,7 @@ const flag = iso => ({
   AU:'🇦🇺',RU:'🇷🇺',IN:'🇮🇳',CN:'🇨🇳',AR:'🇦🇷',NL:'🇳🇱',SE:'🇸🇪',DK:'🇩🇰',NO:'🇳🇴',FI:'🇫🇮',PT:'🇵🇹',CH:'🇨🇭'
 }[iso] || '🏳️');
 
+/* ---------- FORMATO FICHA ---------- */
 function buildFicha(item, type) {
   const titleOrig = item.original_title || item.original_name || item.title || item.name;
   const titleES   = item.title || item.name;
@@ -66,19 +67,19 @@ function buildFicha(item, type) {
     ? (item.release_date || '').slice(0, 4)
     : `${(item.first_air_date || '').slice(0, 4)} - ${(item.last_air_date || '').slice(0, 4) || ''}`;
   const country = item.origin_country?.[0] || item.production_countries?.[0]?.iso_3166_1 || 'US';
-  const countryName = countryNames[country] || country;
-  const duration = type === 'movie'
-    ? `${item.runtime || 0}m`
-    : `${item.episode_run_time?.[0] || 0}m`;
+  const countryName = ({ US:'United_States', GB:'United_Kingdom', ES:'Spain', FR:'France', DE:'Germany', IT:'Italy', JP:'Japan', KR:'South_Korea', MX:'Mexico', BR:'Brazil', CA:'Canada', AU:'Australia', RU:'Russia', IN:'India', CN:'China', AR:'Argentina', NL:'Netherlands', SE:'Sweden', DK:'Denmark' }[country] || country);
+  const flag = ({ US:'🇺🇸', GB:'🇬🇧', ES:'🇪🇸', FR:'🇫🇷', DE:'🇩🇪', IT:'🇮🇹', JP:'🇯🇵', KR:'🇰🇷', MX:'🇲🇽', BR:'🇧🇷', CA:'🇨🇦', AU:'🇦🇺', RU:'🇷🇺', IN:'🇮🇳', CN:'🇨🇳' }[country] || '🏳️');
+  const duration = type === 'movie' ? `${item.runtime || 0}m` : `${item.episode_run_time?.[0] || 0}m`;
   const seasons = item.number_of_seasons || 1;
   const episodes = item.number_of_episodes || 1;
   const rating = item.release_dates?.results?.find(r => r.iso_3166_1 === country)?.release_dates?.[0]?.certification ||
                  item.content_ratings?.results?.[0]?.rating || 'Sin clasificación';
-  const genres = item.genres?.map(g => genreMap[g.id] || `#${g.name.replace(/ /g, '_')}`).join(' ') || '';
-  const sinopsis = item.overview?.slice(0, 750) || 'Sin sinopsis.';
+  const genresArr = item.genres || [];
+  const genres = genresArr.map(g => `#${g.name.replace(/ /g, '_')}`).join(' ') || '';
+  const sinopsis = (item.overview || '').slice(0, 750).replace(/\s+/g, ' ').trim() || 'Sin sinopsis.';
 
   return `🏷Título: *${escapeMD(titleOrig)}* | *${escapeMD(titleES)}*\n📅Año: *${escapeMD(year)}*\n` +
-         `🗺País: ${flag(country)}#${countryName}\n⏰Duración: *${duration}*\n` +
+         `🗺País: ${flag}#${countryName}\n⏰Duración: *${duration}*\n` +
          (type === 'tv' ? `⏳Temporadas: *${seasons}*\n🎞Episodios: *${episodes}*\n` : '') +
          `©Clasificación: *${escapeMD(rating)}*\n📝Género: ${genres}\n📃Sinopsis: ${escapeMD(sinopsis)}`;
 }
@@ -137,15 +138,19 @@ bot.on('callback_query', async query => {
   await bot.answerCallbackQuery(query.id);
   await bot.sendChatAction(query.message.chat.id, 'typing');
 
-  const { data } = await axios.get(`/${type}/${id}`, {
-    params: { api_key: TMDB_KEY, language: 'es', append_to_response: 'release_dates,content_ratings' }
-  });
+  try {
+    const { data } = await axios.get(`/${type}/${id}`, {
+      params: { api_key: TMDB_KEY, language: 'es', append_to_response: 'release_dates,content_ratings' }
+    });
 
-  const ficha = buildFicha(data, type);
-  const poster = `https://image.tmdb.org/t/p/w500${data.poster_path}`;
+    const ficha = buildFicha(data, type);
+    const poster = `https://image.tmdb.org/t/p/w500${data.poster_path}`;
 
-  await bot.sendPhoto(query.message.chat.id, poster);
-  await bot.sendMessage(query.message.chat.id, ficha, { parse_mode: 'Markdown' });
+    await bot.sendPhoto(query.message.chat.id, poster);
+    await bot.sendMessage(query.message.chat.id, ficha, { parse_mode: 'Markdown' });
+  } catch (e) {
+    await bot.sendMessage(query.message.chat.id, 'No pude generar la ficha.');
+  }
 });
 
 console.log('🤖 Bot pulido y listo');

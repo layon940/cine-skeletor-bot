@@ -9,6 +9,7 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
 axios.defaults.baseURL = 'https://api.themoviedb.org/3';
 
+/* ---------- UTILS ---------- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const escapeMD = str => str.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 
@@ -55,8 +56,8 @@ const countryNames = {
 };
 const flag = iso => ({
   US:'🇺🇸',GB:'🇬🇧',ES:'🇪🇸',FR:'🇫🇷',DE:'🇩🇪',IT:'🇮🇹',JP:'🇯🇵',KR:'🇰🇷',MX:'🇲🇽',BR:'🇧🇷',
-  CA:'🇨🇦',AU:'🇦🇺',RU:'🇷🇺',IN:'🇮🇳',CN:'🇨🇳',AR:'🇦🇷',NL:'🇳🇱',SE:'🇸🇪',DK:'🇩🇰',NO:'🇳🇴',FI:'🇫🇮',PT:'🇵🇹',CH:'🇨🇭'
-}[iso] || '🏳️');
+  CA:'🇨🇦',AU:'🇦🇺',RU:'🇷🇺',IN:'🇮🇳',CN:'🇨🇳',AR:'🇦🇷',NL:'🇳🇱',SE:'🇸🇪',DK:'🇩🇰',NO:'🇳🇴',
+  FI:'🇫🇮',PT:'🇵🇹',CH:'🇨🇭'}[iso] || '🏳️');
 
 function buildFicha(item, type) {
   const titleOrig = item.original_title || item.original_name || item.title || item.name;
@@ -66,7 +67,6 @@ function buildFicha(item, type) {
     : `${(item.first_air_date || '').slice(0, 4)} - ${(item.last_air_date || '').slice(0, 4) || ''}`;
   const country = item.origin_country?.[0] || item.production_countries?.[0]?.iso_3166_1 || 'US';
   const countryName = countryNames[country] || country;
-  const flag = ({ US:'🇺🇸',GB:'🇬🇧',ES:'🇪🇸',FR:'🇫🇷',DE:'🇩🇪',IT:'🇮🇹',JP:'🇯🇵',KR:'🇰🇷',MX:'🇲🇽',BR:'🇧🇷',CA:'🇨🇦',AU:'🇦🇺',RU:'🇷🇺',IN:'🇮🇳',CN:'🇨🇳',AR:'🇦🇷',NL:'🇳🇱',SE:'🇸🇪',DK:'🇩🇰',NO:'🇳🇴',FI:'🇫🇮',PT:'🇵🇹',CH:'🇨🇭'}[country] || '🏳️');
   const duration = type === 'movie' ? `${item.runtime || 0}m` : `${item.episode_run_time?.[0] || 0}m`;
   const seasons = item.number_of_seasons || 1;
   const episodes = item.number_of_episodes || 1;
@@ -77,7 +77,7 @@ function buildFicha(item, type) {
   const sinopsis = (item.overview || '').slice(0, 750).replace(/\s+/g, ' ').trim() || 'Sin sinopsis.';
 
   return `🏷Título: *${escapeMD(titleOrig)}* | *${escapeMD(titleES)}*\n📅Año: *${escapeMD(year)}*\n` +
-         `🗺País: ${flag}#${countryName}\n⏰Duración: *${duration}*\n` +
+         `🗺País: ${flag(country)}#${countryName}\n⏰Duración: *${duration}*\n` +
          (type === 'tv' ? `⏳Temporadas: *${seasons}*\n🎞Episodios: *${episodes}*\n` : '') +
          `©Clasificación: *${escapeMD(rating)}*\n📝Género: ${genres}\n📃Sinopsis: ${escapeMD(sinopsis)}`;
 }

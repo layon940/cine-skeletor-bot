@@ -9,7 +9,6 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
 axios.defaults.baseURL = 'https://api.themoviedb.org/3';
 
-/* ---------- UTILS ---------- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const escapeMD = str => str.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 
@@ -43,15 +42,16 @@ async function searchTMDb(query) {
 
 /* ---------- MAPAS ---------- */
 const genreMap = {
-  28:'#Acción',12:'#Aventura',16:'#Animación',35:'#Comedia',80:'#Crimen',99:'#Documental',18:'#Drama',
-  10751:'#Familia',14:'#Fantasía',36:'#Historia',27:'#Horror',10402:'#Musical',9648:'#Misterio',
-  10749:'#Romance',878:'#Ciencia_ficción',53:'#Suspenso',10752:'#Guerra',37:'#Oeste'
+  28:'#Acción',12:'#Aventura',16:'#Animación',35:'#Comedia',80:'#Crimen',
+  99:'#Documental',18:'#Drama',10751:'#Familia',14:'#Fantasía',36:'#Historia',
+  27:'#Horror',10402:'#Musical',9648:'#Misterio',10749:'#Romance',
+  878:'#Ciencia_ficción',53:'#Suspenso',10752:'#Guerra',37:'#Oeste'
 };
 const countryNames = {
-  US:'United_States',GB:'United_Kingdom',ES:'Spain',FR:'France',DE:'Germany',IT:'Italy',JP:'Japan',
-  KR:'South_Korea',MX:'Mexico',BR:'Brazil',CA:'Canada',AU:'Australia',RU:'Russia',IN:'India',
-  CN:'China',AR:'Argentina',NL:'Netherlands',SE:'Sweden',DK:'Denmark',NO:'Norway',FI:'Finland',
-  PT:'Portugal',CH:'Switzerland'
+  US:'United_States',GB:'United_Kingdom',ES:'Spain',FR:'France',DE:'Germany',IT:'Italy',
+  JP:'Japan',KR:'South_Korea',MX:'Mexico',BR:'Brazil',CA:'Canada',AU:'Australia',
+  RU:'Russia',IN:'India',CN:'China',AR:'Argentina',NL:'Netherlands',SE:'Sweden',
+  DK:'Denmark',NO:'Norway',FI:'Finland',PT:'Portugal',CH:'Switzerland'
 };
 const flag = iso => ({
   US:'🇺🇸',GB:'🇬🇧',ES:'🇪🇸',FR:'🇫🇷',DE:'🇩🇪',IT:'🇮🇹',JP:'🇯🇵',KR:'🇰🇷',MX:'🇲🇽',BR:'🇧🇷',
@@ -66,6 +66,7 @@ function buildFicha(item, type) {
     : `${(item.first_air_date || '').slice(0, 4)} - ${(item.last_air_date || '').slice(0, 4) || ''}`;
   const country = item.origin_country?.[0] || item.production_countries?.[0]?.iso_3166_1 || 'US';
   const countryName = countryNames[country] || country;
+  const flag = ({ US:'🇺🇸',GB:'🇬🇧',ES:'🇪🇸',FR:'🇫🇷',DE:'🇩🇪',IT:'🇮🇹',JP:'🇯🇵',KR:'🇰🇷',MX:'🇲🇽',BR:'🇧🇷',CA:'🇨🇦',AU:'🇦🇺',RU:'🇷🇺',IN:'🇮🇳',CN:'🇨🇳',AR:'🇦🇷',NL:'🇳🇱',SE:'🇸🇪',DK:'🇩🇰',NO:'🇳🇴',FI:'🇫🇮',PT:'🇵🇹',CH:'🇨🇭'}[country] || '🏳️');
   const duration = type === 'movie' ? `${item.runtime || 0}m` : `${item.episode_run_time?.[0] || 0}m`;
   const seasons = item.number_of_seasons || 1;
   const episodes = item.number_of_episodes || 1;
@@ -76,7 +77,7 @@ function buildFicha(item, type) {
   const sinopsis = (item.overview || '').slice(0, 750).replace(/\s+/g, ' ').trim() || 'Sin sinopsis.';
 
   return `🏷Título: *${escapeMD(titleOrig)}* | *${escapeMD(titleES)}*\n📅Año: *${escapeMD(year)}*\n` +
-         `🗺País: ${flag(country)}#${countryName}\n⏰Duración: *${duration}*\n` +
+         `🗺País: ${flag}#${countryName}\n⏰Duración: *${duration}*\n` +
          (type === 'tv' ? `⏳Temporadas: *${seasons}*\n🎞Episodios: *${episodes}*\n` : '') +
          `©Clasificación: *${escapeMD(rating)}*\n📝Género: ${genres}\n📃Sinopsis: ${escapeMD(sinopsis)}`;
 }
@@ -100,7 +101,10 @@ bot.on('message', async msg => {
     let list = 'Resultados:\n';
     const buttons = results.map((item, idx) => {
       list += `${idx + 1}. ${item.title || item.name}\n`;
-      return { text: `${idx + 1}`, callback_data: `detail_${item.id}_${item.media_type || (item.first_air_date ? 'tv' : 'movie')}` };
+      return {
+        text: `${idx + 1}`,
+        callback_data: `detail_${item.id}_${item.media_type || (item.first_air_date ? 'tv' : 'movie')}`
+      };
     });
 
     const keyboard = [];
@@ -141,9 +145,9 @@ bot.on('callback_query', async query => {
 
     await bot.sendPhoto(query.message.chat.id, poster);
     await bot.sendMessage(query.message.chat.id, ficha, { parse_mode: 'Markdown' });
-  } catch {
+  } catch (e) {
     await bot.sendMessage(query.message.chat.id, 'No pude generar la ficha.');
   }
 });
 
-console.log('🤖 Bot final y pulido');
+console.log('🤖 Bot 100 % listo');

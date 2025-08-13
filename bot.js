@@ -156,3 +156,83 @@ bot.on('callback_query', async query => {
 });
 
 console.log('🤖 Bot final y pulido');
+/* ---------- NEWS ---------- */
+const got = require('got');               // npm install got
+const cheerio = require('cheerio');       // npm install cheerio
+const schedule = require('node-schedule'); // npm install node-schedule
+
+const CHANNEL_ID = process.env.CHANNEL_ID;
+
+// Extraer noticias de una URL
+async function scrapeIMDbNews(url, type) {
+  const html = await got(url).text();
+  const $ = cheerio.load(html);
+  const items = [];
+
+  $('.ipc-list-card').slice(0, 5).each((_, el) => {
+    const title = $(el).find('.ipc-list-card__title').text().trim();
+    const summary = $(el).find('.ipc-list-card__content').text().trim();
+    const img = $(el).find('img').attr('src');
+    const link = $(el).find('a').attr('href');
+    if (title && summary) {
+      items.push({
+        title,
+        summary: summary.slice(0, 700).replace(/\s+/g, ' '),
+        img: img || 'https://via.placeholder.com/640x360.png?text=No+Image',
+        link: link ? `https://www.imdb.com${link}` : '',
+        type
+      });
+    }
+  });
+  return items;
+}
+
+/* Genera hashtag inteligente */
+function generateHashtags(text, type) {
+  const tags = new Set();
+  const words = text.toLowerCase().match(/\b\w{3,}\b/g) || [];
+  words.forEach(w => {
+    if (!['the', 'and', 'for', 'with', 'from', 'that', 'this'].includes(w)) {
+      tags.add(`#${w}`);
+    }
+  });
+  tags.add(type === 'tv' ? '#Series' : '#Película');
+  return [...tags].slice(0, 10).join(' ');
+}
+
+/* Crear y programar publicaciones */
+async function publishNews() {
+  const [tvNews, movieNews] = await Promise.all([
+    scrapeIMDbNews('https://www.imdb.com/news/tv/', 'tv'),
+    scrapeIMDbNews('https://www.imdb.com/news/movie/', 'movie')
+  ]);
+
+  const combined = [];
+  for (let i = 0; i < 5; i++) {
+    combined.push(tvNews[i], movieNews[i]);
+  }
+
+  for (let i = 0; i < combined.length; i++) {
+    const { title, summary, img, type } = combined[i];
+    const hashtags = generateHashtags(title + ' ' + summary, type);
+    const caption = `${summary}\n—\n${hashtags}`;
+
+    schedule.scheduleJob(Date.now() + i * 60 * 60 * 1000, async () => {
+      try {
+        await bot.sendPhoto(CHANNEL_ID, img, { caption, parse_mode: 'Markdown' });
+      } catch (e) {
+        await bot.sendMessage(CHANNEL_ID, `Error al publicar: ${e.message}`);
+      }
+    });
+  }
+}
+
+/* Comando /news */
+bot.on('message', async (msg) => {
+  if (msg.from.id !== OWNER_ID) return;
+  if (msg.text.trim() === '/news') {
+    await bot.sendMessage(msg.chat.id, '🔍 Recopilando noticias…');
+    await publishNews();
+    await bot.sendMessage(msg.chat.id, '✅ 10 publicaciones programadas (1 por hora).');
+  }
+});

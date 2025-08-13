@@ -1,11 +1,14 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
+const cheerio = require('cheerio');
+const schedule = require('node-schedule');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const OWNER_ID = Number(process.env.OWNER_ID);
 const TMDB_KEY = process.env.TMDB_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
+const CHANNEL_ID = process.env.CHANNEL_ID; // ID del canal para /news
 
 axios.defaults.baseURL = 'https://api.themoviedb.org/3';
 
@@ -42,46 +45,73 @@ async function searchTMDb(query) {
 }
 
 /* ---------- MAPAS ---------- */
-const genreMap = {
-  28:'#Acción',12:'#Aventura',16:'#Animación',35:'#Comedia',80:'#Crimen',99:'#Documental',18:'#Drama',
-  10751:'#Familia',14:'#Fantasía',36:'#Historia',27:'#Horror',10402:'#Musical',9648:'#Misterio',
-  10749:'#Romance',878:'#Ciencia_ficción',53:'#Suspenso',10752:'#Guerra',37:'#Oeste'
-};
-const countryNames = {
-  US:'United_States',GB:'United_Kingdom',ES:'Spain',FR:'France',DE:'Germany',IT:'Italy',
-  JP:'Japan',KR:'South_Korea',MX:'Mexico',BR:'Brazil',CA:'Canada',AU:'Australia',
-  RU:'Russia',IN:'India',CN:'China',AR:'Argentina',NL:'Netherlands',SE:'Sweden',
-  DK:'Denmark',NO:'Norway',FI:'Finland',PT:'Portugal',CH:'Switzerland'
-};
-const flag = iso => ({
-  US:'🇺🇸',GB:'🇬🇧',ES:'🇪🇸',FR:'🇫🇷',DE:'🇩🇪',IT:'🇮🇹',JP:'🇯🇵',KR:'🇰🇷',MX:'🇲🇽',BR:'🇧🇷',
-  CA:'🇨🇦',AU:'🇦🇺',RU:'🇷🇺',IN:'🇮🇳',CN:'🇨🇳',AR:'🇦🇷',NL:'🇳🇱',SE:'🇸🇪',DK:'🇩🇰',NO:'🇳🇴',
-  FI:'🇫🇮',PT:'🇵🇹',CH:'🇨🇭'}[iso] || '🏳️');
+const genreMap = { 28:'#Acción',12:'#Aventura',16:'#Animación',35:'#Comedia',80:'#Crimen',99:'#Documental',18:'#Drama',10751:'#Familia',14:'#Fantasía',36:'#Historia',27:'#Horror',10402:'#Musical',9648:'#Misterio',10749:'#Romance',878:'#Ciencia_ficción',53:'#Suspenso',10752:'#Guerra',37:'#Oeste' };
+const countryNames = { US:'United_States',GB:'United_Kingdom',ES:'Spain',FR:'France',DE:'Germany',IT:'Italy',JP:'Japan',KR:'South_Korea',MX:'Mexico',BR:'Brazil',CA:'Canada',AU:'Australia',RU:'Russia',IN:'India',CN:'China',AR:'Argentina',NL:'Netherlands',SE:'Sweden',DK:'Denmark',NO:'Norway',FI:'Finland',PT:'Portugal',CH:'Switzerland' };
+const flag = iso => ({ US:'🇺🇸',GB:'🇬🇧',ES:'🇪🇸',FR:'🇫🇷',DE:'🇩🇪',IT:'🇮🇹',JP:'🇯🇵',KR:'🇰🇷',MX:'🇲🇽',BR:'🇧🇷',CA:'🇨🇦',AU:'🇦🇺',RU:'🇷🇺',IN:'🇮🇳',CN:'🇨🇳',AR:'🇦🇷',NL:'🇳🇱',SE:'🇸🇪',DK:'🇩🇰',NO:'🇳🇴',FI:'🇫🇮',PT:'🇵🇹',CH:'🇨🇭'}[iso] || '🏳️');
 
-/* ---------- FICHA CON DATOS O VACÍOS ---------- */
+/* ---------- FICHA ---------- */
 function buildFicha(item, type) {
   const titleOrig = item.original_title || item.original_name || item.title || item.name;
   const titleES   = item.title || item.name;
-  const year = type === 'movie'
-    ? (item.release_date || '').slice(0, 4)
-    : `${(item.first_air_date || '').slice(0, 4)} - ${(item.last_air_date || '').slice(0, 4) || ''}`;
+  const year = type === 'movie' ? (item.release_date || '').slice(0, 4) : `${(item.first_air_date || '').slice(0, 4)} - ${(item.last_air_date || '').slice(0, 4) || ''}`;
   const country = item.origin_country?.[0] || item.production_countries?.[0]?.iso_3166_1 || '—';
   const countryName = countryNames[country] || country;
-  const duration = type === 'movie'
-    ? `${item.runtime || '—'}m`
-    : `${item.episode_run_time?.[0] || '—'}m`;
-  const seasons = item.number_of_seasons || '—';
-  const episodes = item.number_of_episodes || '—';
+  const duration = type === 'movie' ? `${item.runtime || '—'}m` : `${item.episode_run_time?.[0] || '—'}m`;
+  const seasons  = type === 'tv' ? item.number_of_seasons || '—' : null;
+  const episodes = type === 'tv' ? item.number_of_episodes || '—' : null;
   const rating = item.release_dates?.results?.find(r => r.iso_3166_1 === country)?.release_dates?.[0]?.certification ||
                  item.content_ratings?.results?.[0]?.rating || '—';
-  const genresArr = item.genres || [];
-  const genres = genresArr.map(g => `#${g.name.replace(/ /g, '_')}`).join(' ') || '—';
+  const genres = (item.genres || []).map(g => `#${g.name.replace(/ /g, '_')}`).join(' ') || '—';
   const sinopsis = (item.overview || '').slice(0, 750).replace(/\s+/g, ' ').trim() || '—';
 
-  return `🏷Título: *${escapeMD(titleOrig)}* | *${escapeMD(titleES)}*\n📅Año: *${escapeMD(year)}*\n` +
-         `🗺País: ${flag(country)}#${countryName}\n⏰Duración: *${duration}*\n` +
-         (type === 'tv' ? `⏳Temporadas: *${seasons}*\n🎞Episodios: *${episodes}*\n` : '') +
-         `©Clasificación: *${escapeMD(rating)}*\n📝Género: ${genres}\n📃Sinopsis: ${escapeMD(sinopsis)}`;
+  let txt = `🏷Título: *${escapeMD(titleOrig)}* | *${escapeMD(titleES)}*\n📅Año: *${escapeMD(year)}*\n🗺País: ${flag(country)}#${countryName}\n⏰Duración: *${duration}*`;
+  if (type === 'tv') txt += `\n⏳Temporadas: *${seasons}*\n🎞Episodios: *${episodes}*`;
+  txt += `\n©Clasificación: *${escapeMD(rating)}*\n📝Género: ${genres}\n📃Sinopsis: ${escapeMD(sinopsis)}`;
+  return txt;
+}
+
+/* ---------- NEWS ---------- */
+async function scrapeIMDbNews() {
+  const [tvHtml, movieHtml] = await Promise.all([
+    axios.get('https://www.imdb.com/news/tv/').then(r => r.data),
+    axios.get('https://www.imdb.com/news/movie/').then(r => r.data)
+  ]);
+  const extract = (html, type) => {
+    const $ = cheerio.load(html);
+    return $('.ipc-list-card').slice(0, 5).map((_, el) => ({
+      title: $(el).find('.ipc-list-card__title').text().trim(),
+      summary: $(el).find('.ipc-list-card__content').text().trim().slice(0, 700).replace(/\s+/g, ' '),
+      img: $(el).find('img').attr('src') || 'https://via.placeholder.com/640x360.png?text=No+Image',
+      link: $(el).find('a').attr('href') ? `https://www.imdb.com${$(el).find('a').attr('href')}` : '',
+      type
+    })).get();
+  };
+  return { tv: extract(tvHtml, 'tv'), movies: extract(movieHtml, 'movie') };
+}
+
+function generateHashtags(text, type) {
+  const words = text.toLowerCase().match(/\b\w{3,}\b/g) || [];
+  const tags = words.filter(w => !['the', 'and', 'for', 'with', 'from', 'that', 'this'].includes(w))
+                    .slice(0, 10).map(w => `#${w}`);
+  tags.push(type === 'tv' ? '#Serie' : '#Película');
+  return tags.join(' ');
+}
+
+async function publishNews() {
+  const { tv, movies } = await scrapeIMDbNews();
+  const combined = [];
+  for (let i = 0; i < 5; i++) combined.push(tv[i], movies[i]);
+
+  combined.forEach((item, i) => {
+    const caption = `${item.summary}\n—\n${generateHashtags(item.title + ' ' + item.summary, item.type)}`;
+    schedule.scheduleJob(Date.now() + i * 60 * 60 * 1000, async () => {
+      try {
+        await bot.sendPhoto(CHANNEL_ID, item.img, { caption, parse_mode: 'Markdown' });
+      } catch (e) {
+        await bot.sendMessage(CHANNEL_ID, `Error al publicar: ${e.message}`);
+      }
+    });
+  });
 }
 
 /* ---------- ROUTER ---------- */
@@ -103,9 +133,9 @@ bot.on('message', async msg => {
     let list = 'Resultados:\n';
     const buttons = results.map((item, idx) => {
       const year = (item.release_date || item.first_air_date || '').slice(0, 4);
-      const typeEmoji = item.media_type === 'tv' || item.first_air_date ? '📺' : '🎬';
-      const typeText  = item.media_type === 'tv' || item.first_air_date ? 'Serie' : 'Película';
-      list += `${idx + 1}. ${typeEmoji} ${item.title || item.name} [${year}] - ${typeText}\n`;
+      const emoji = item.media_type === 'tv' || item.first_air_date ? '📺' : '🎬';
+      const tipo = item.media_type === 'tv' || item.first_air_date ? 'Serie' : 'Película';
+      list += `${idx + 1}. ${emoji} ${item.title || item.name} [${year}] - ${tipo}\n`;
       return {
         text: `${idx + 1}`,
         callback_data: `detail_${item.id}_${item.media_type || (item.first_air_date ? 'tv' : 'movie')}`
@@ -126,12 +156,18 @@ bot.on('message', async msg => {
     return bot.sendMessage(chatId, resp.slice(0, 1500), { parse_mode: 'Markdown' });
   }
 
+  if (text === '/news') {
+    await bot.sendMessage(chatId, '🔍 Recopilando noticias…');
+    await publishNews();
+    await bot.sendMessage(chatId, '✅ 10 publicaciones programadas (1 por hora).');
+    return;
+  }
+
   await bot.sendChatAction(chatId, 'typing');
   const resp = await askGemini(`Responde como asistente virtual:\n\n${text}`);
   return bot.sendMessage(chatId, resp.slice(0, 1500), { parse_mode: 'Markdown' });
 });
 
-/* ---------- CALLBACK BOTONES ---------- */
 bot.on('callback_query', async query => {
   if (query.from.id !== OWNER_ID) return;
   const [prefix, id, type] = query.data.split('_');
@@ -155,84 +191,4 @@ bot.on('callback_query', async query => {
   }
 });
 
-console.log('🤖 Bot final y pulido');
-/* ---------- NEWS ---------- */
-const got = require('got');               // npm install got
-const cheerio = require('cheerio');       // npm install cheerio
-const schedule = require('node-schedule'); // npm install node-schedule
-
-const CHANNEL_ID = process.env.CHANNEL_ID;
-
-// Extraer noticias de una URL
-async function scrapeIMDbNews(url, type) {
-  const html = await got(url).text();
-  const $ = cheerio.load(html);
-  const items = [];
-
-  $('.ipc-list-card').slice(0, 5).each((_, el) => {
-    const title = $(el).find('.ipc-list-card__title').text().trim();
-    const summary = $(el).find('.ipc-list-card__content').text().trim();
-    const img = $(el).find('img').attr('src');
-    const link = $(el).find('a').attr('href');
-    if (title && summary) {
-      items.push({
-        title,
-        summary: summary.slice(0, 700).replace(/\s+/g, ' '),
-        img: img || 'https://via.placeholder.com/640x360.png?text=No+Image',
-        link: link ? `https://www.imdb.com${link}` : '',
-        type
-      });
-    }
-  });
-  return items;
-}
-
-/* Genera hashtag inteligente */
-function generateHashtags(text, type) {
-  const tags = new Set();
-  const words = text.toLowerCase().match(/\b\w{3,}\b/g) || [];
-  words.forEach(w => {
-    if (!['the', 'and', 'for', 'with', 'from', 'that', 'this'].includes(w)) {
-      tags.add(`#${w}`);
-    }
-  });
-  tags.add(type === 'tv' ? '#Series' : '#Película');
-  return [...tags].slice(0, 10).join(' ');
-}
-
-/* Crear y programar publicaciones */
-async function publishNews() {
-  const [tvNews, movieNews] = await Promise.all([
-    scrapeIMDbNews('https://www.imdb.com/news/tv/', 'tv'),
-    scrapeIMDbNews('https://www.imdb.com/news/movie/', 'movie')
-  ]);
-
-  const combined = [];
-  for (let i = 0; i < 5; i++) {
-    combined.push(tvNews[i], movieNews[i]);
-  }
-
-  for (let i = 0; i < combined.length; i++) {
-    const { title, summary, img, type } = combined[i];
-    const hashtags = generateHashtags(title + ' ' + summary, type);
-    const caption = `${summary}\n—\n${hashtags}`;
-
-    schedule.scheduleJob(Date.now() + i * 60 * 60 * 1000, async () => {
-      try {
-        await bot.sendPhoto(CHANNEL_ID, img, { caption, parse_mode: 'Markdown' });
-      } catch (e) {
-        await bot.sendMessage(CHANNEL_ID, `Error al publicar: ${e.message}`);
-      }
-    });
-  }
-}
-
-/* Comando /news */
-bot.on('message', async (msg) => {
-  if (msg.from.id !== OWNER_ID) return;
-  if (msg.text.trim() === '/news') {
-    await bot.sendMessage(msg.chat.id, '🔍 Recopilando noticias…');
-    await publishNews();
-    await bot.sendMessage(msg.chat.id, '✅ 10 publicaciones programadas (1 por hora).');
-  }
-});
+console.log('🤖 Bot final con /news');

@@ -2,18 +2,15 @@ require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const cheerio = require('cheerio');
-const schedule = require('node-schedule');
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 const OWNER_ID = Number(process.env.OWNER_ID);
 const TMDB_KEY = process.env.TMDB_API_KEY;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
-const CHANNEL_ID = process.env.CHANNEL_ID; // ID del canal para /news
 
 axios.defaults.baseURL = 'https://api.themoviedb.org/3';
 
 /* ---------- UTILS ---------- */
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 const escapeMD = str => str.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 
 /* ---------- GEMINI ---------- */
@@ -59,11 +56,9 @@ function buildFicha(item, type) {
   const duration = type === 'movie' ? `${item.runtime || '—'}m` : `${item.episode_run_time?.[0] || '—'}m`;
   const seasons  = type === 'tv' ? item.number_of_seasons || '—' : null;
   const episodes = type === 'tv' ? item.number_of_episodes || '—' : null;
-  const rating = item.release_dates?.results?.find(r => r.iso_3166_1 === country)?.release_dates?.[0]?.certification ||
-                 item.content_ratings?.results?.[0]?.rating || '—';
+  const rating = item.release_dates?.results?.find(r => r.iso_3166_1 === country)?.release_dates?.[0]?.certification || item.content_ratings?.results?.[0]?.rating || '—';
   const genres = (item.genres || []).map(g => `#${g.name.replace(/ /g, '_')}`).join(' ') || '—';
   const sinopsis = (item.overview || '').slice(0, 750).replace(/\s+/g, ' ').trim() || '—';
-
   let txt = `🏷Título: *${escapeMD(titleOrig)}* | *${escapeMD(titleES)}*\n📅Año: *${escapeMD(year)}*\n🗺País: ${flag(country)}#${countryName}\n⏰Duración: *${duration}*`;
   if (type === 'tv') txt += `\n⏳Temporadas: *${seasons}*\n🎞Episodios: *${episodes}*`;
   txt += `\n©Clasificación: *${escapeMD(rating)}*\n📝Género: ${genres}\n📃Sinopsis: ${escapeMD(sinopsis)}`;
@@ -91,33 +86,14 @@ async function scrapeIMDbNews() {
 
 function generateHashtags(text, type) {
   const words = text.toLowerCase().match(/\b\w{3,}\b/g) || [];
-  const tags = words.filter(w => !['the', 'and', 'for', 'with', 'from', 'that', 'this'].includes(w))
-                    .slice(0, 10).map(w => `#${w}`);
+  const tags = words.filter(w => !['the', 'and', 'for', 'with', 'from', 'that', 'this'].includes(w)).slice(0, 10).map(w => `#${w}`);
   tags.push(type === 'tv' ? '#Serie' : '#Película');
   return tags.join(' ');
-}
-
-async function publishNews() {
-  const { tv, movies } = await scrapeIMDbNews();
-  const combined = [];
-  for (let i = 0; i < 5; i++) combined.push(tv[i], movies[i]);
-
-  combined.forEach((item, i) => {
-    const caption = `${item.summary}\n—\n${generateHashtags(item.title + ' ' + item.summary, item.type)}`;
-    schedule.scheduleJob(Date.now() + i * 60 * 60 * 1000, async () => {
-      try {
-        await bot.sendPhoto(CHANNEL_ID, item.img, { caption, parse_mode: 'Markdown' });
-      } catch (e) {
-        await bot.sendMessage(CHANNEL_ID, `Error al publicar: ${e.message}`);
-      }
-    });
-  });
 }
 
 /* ---------- ROUTER ---------- */
 bot.on('message', async msg => {
   if (msg.from.id !== OWNER_ID || !msg.text) return;
-
   const text = msg.text.trim();
   const chatId = msg.chat.id;
 
@@ -126,7 +102,6 @@ bot.on('message', async msg => {
   if (text.startsWith('/movie')) {
     const term = text.replace(/^\/movie\s*/i, '').trim();
     if (!term) return bot.sendMessage(chatId, 'Ejemplo: `/movie interestellar`');
-
     const results = await searchTMDb(term);
     if (!results.length) return bot.sendMessage(chatId, 'Sin resultados.');
 
@@ -136,15 +111,10 @@ bot.on('message', async msg => {
       const emoji = item.media_type === 'tv' || item.first_air_date ? '📺' : '🎬';
       const tipo = item.media_type === 'tv' || item.first_air_date ? 'Serie' : 'Película';
       list += `${idx + 1}. ${emoji} ${item.title || item.name} [${year}] - ${tipo}\n`;
-      return {
-        text: `${idx + 1}`,
-        callback_data: `detail_${item.id}_${item.media_type || (item.first_air_date ? 'tv' : 'movie')}`
-      };
+      return { text: `${idx + 1}`, callback_data: `detail_${item.id}_${item.media_type || (item.first_air_date ? 'tv' : 'movie')}` };
     });
-
     const keyboard = [];
     for (let i = 0; i < buttons.length; i += 5) keyboard.push(buttons.slice(i, i + 5));
-
     return bot.sendMessage(chatId, list, { reply_markup: { inline_keyboard: keyboard } });
   }
 
@@ -158,8 +128,15 @@ bot.on('message', async msg => {
 
   if (text === '/news') {
     await bot.sendMessage(chatId, '🔍 Recopilando noticias…');
-    await publishNews();
-    await bot.sendMessage(chatId, '✅ 10 publicaciones programadas (1 por hora).');
+    const { tv, movies } = await scrapeIMDbNews();
+    const combined = [];
+    for (let i = 0; i < 5; i++) combined.push(tv[i], movies[i]);
+    for (const { title, summary, img, type } of combined) {
+      const hashtags = generateHashtags(title + ' ' + summary, type);
+      const caption = `${summary}\n—\n${hashtags}`;
+      await bot.sendPhoto(chatId, img, { caption, parse_mode: 'Markdown' });
+    }
+    await bot.sendMessage(chatId, '✅ 10 noticias enviadas.');
     return;
   }
 
@@ -175,20 +152,17 @@ bot.on('callback_query', async query => {
 
   await bot.answerCallbackQuery(query.id);
   await bot.sendChatAction(query.message.chat.id, 'typing');
-
   try {
     const { data } = await axios.get(`/${type}/${id}`, {
       params: { api_key: TMDB_KEY, language: 'es', append_to_response: 'release_dates,content_ratings' }
     });
-
     const ficha = buildFicha(data, type);
     const poster = `https://image.tmdb.org/t/p/w500${data.poster_path}`;
-
     await bot.sendPhoto(query.message.chat.id, poster);
     await bot.sendMessage(query.message.chat.id, ficha, { parse_mode: 'Markdown' });
-  } catch (e) {
+  } catch {
     await bot.sendMessage(query.message.chat.id, 'No pude generar la ficha.');
   }
 });
 
-console.log('🤖 Bot final con /news');
+console.log('🤖 Bot listo');

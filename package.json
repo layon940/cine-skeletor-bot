@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node bot.js"
   },
+"engines": {
+    "node": "16.x"
+  },
  "dependencies": {
   "node-telegram-bot-api": "^0.64.0",
   "axios": "^1.6.0",
